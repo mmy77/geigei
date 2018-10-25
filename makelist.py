@@ -99,50 +99,73 @@ def crop_file(filename):
 		f.write(line+'\n')
 
 
-trainfile = 'train_all.txt'
-newtrain = 'train_angle.txt'
-testfile = 'test_angle.txt'
-imgpath = '/mnt/disk50/datasets/dataset-gait/CASIA/DatasetB/GEI/'
+
+
+def readfile(imgpath):
+	imglist = os.listdir(imgpath)
+	count = 0
+	for filename in imglist:
+
+		if filename[-3:]=='png' or filename[-3:]=='jpg':
+				filename2 = filename.split('_')
+				angle = filename2[-2] #090
+				#if angle == '090':
+
+				label = filename2[0]  #/mnt/ftp/datasets/dataset-gait/OU-ISIR/TreadmillDatasetB/00001M4000A0/
+				#print(label)
+				label_int = int(label)
+				
+				#print(label,label_int)
+				#print(label_int)
+				if label_int<=400:
+					count = count + 1
+					trainlist.append(filename+ ' ' + str(label_int))
+					print(filename+ ' ' + str(label_int))
+					#print(dirpath+'/'+filename+' '+str(label_int))
+				#if label_int >250 and label_int<=250:
+				#	vlalist.append(dirpath+'/'+filename+' '+str(label_int))
+				if label_int >400:
+					testlist.append(filename+ ' ' + str(label_int))
+		if(count>=500):
+			break
+	return trainlist,testlist						
+
+							#	count = count+1
+							#	if count>100:
+							#		break
+	#	if count>100:
+def read_file2(imgpath,respath):
+	count = 0
+	for (dirpath,dirnames,filenames) in os.walk(imgpath):
+		for filename in filenames:
+			if filename[-3:]=='png' or filename[-3:]=='jpg':
+				label = dirpath[locate:]  #'/mnt/ftp/datasets/dataset-gait/CASIA/DatasetB/silhouettes/'#001/bg-01/000/'		
+				#label = label.replace('/','_')
+				#filename_label = str(int(filename[-7:-4])/20)
+				#resfile = respath+label+'_'+filename_label+'.png'
+				resfile = respath+label+'/'+filename
+				#print(resfile)
+				count = count + 1
+				if os.path.exists(resfile):
+					print(resfile)
+					trainlist.append(dirpath+'/'+filename + ' '+resfile)
+		if(count>2000):
+			break
+	return trainlist
+
+
+trainfile = 'datalist/train_all.txt'
+newtrain = 'datalist/train_ksample.txt'
+testfile = 'datalist/test_ksample.txt'
+imgpath = '/mnt/ftp/datasets/dataset-gait/CASIA/DatasetB/silhouettes/'#001/bg-01/000/'
+respath = '/mnt/disk50/datasets/dataset-gait/CASIA/DatasetB/cropImg/'
 locate = len(imgpath)
 trainlist = []
 vlalist = []
 testlist = []
-
-
-imglist = os.listdir(imgpath)
-for filename in imglist:
-
-	if filename[-3:]=='png' or filename[-3:]=='jpg':
-			#count = count + 1
-			#print(dirpath)
-			#print ('filename',filename)
-			#print ('dirname:',dirnames)
-			filename2 = filename.split('_')
-			angle = filename2[-2] #090
-			#if angle == '090':
-
-			label = filename2[0]  #/mnt/ftp/datasets/dataset-gait/OU-ISIR/TreadmillDatasetB/00001M4000A0/
-			#print(label)
-			label_int = int(label)
-			
-			#print(label,label_int)
-			#print(label_int)
-			if label_int<=400:
-				trainlist.append(filename+ ' ' + str(label_int))
-				print(filename+ ' ' + str(label_int))
-				#print(dirpath+'/'+filename+' '+str(label_int))
-			#if label_int >250 and label_int<=250:
-			#	vlalist.append(dirpath+'/'+filename+' '+str(label_int))
-			if label_int >400:
-				testlist.append(filename+ ' ' + str(label_int))
-						
-
-						#	count = count+1
-						#	if count>100:
-						#		break
-#	if count>100:
+trainlist = read_file2(imgpath,respath)
 writeFile(trainlist,trainfile)
-shufflefile2(trainfile)
+#shufflefile2(trainfile)
 
 
 txtfile = open(trainfile,'r')

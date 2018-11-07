@@ -16,7 +16,7 @@ from tensorboardX import SummaryWriter
 from time  import time
 #from datagen inport MyDataset
 
-os.environ['CUDA_VISIBLE_DEVICES'] = '0'
+os.environ['CUDA_VISIBLE_DEVICES'] = '1'
 plt.ion()   # 交互模式
 use_cuda = torch.cuda.is_available()
 
@@ -54,6 +54,7 @@ class MyDataset(Dataset):
         index = int(index%(self.__len__()))
 
         input_data, target_data = self.imgs[index]
+        dirname = input_data[::-1][input_data[::-1].find('/'):][::-1]#../../
         #print(fn)
         train_img = self.loader(input_data) 
         target_img = self.loader(target_data)  
@@ -63,7 +64,8 @@ class MyDataset(Dataset):
         #print(train_img.shape)
         train_img = self.transform(train_img)
         target_img = self.target_transform(target_img)
-        return train_img, target_img
+        #print(input_data,target_data)
+        return train_img, target_img, dirname
         
         #return fn, label
 
@@ -71,14 +73,14 @@ class MyDataset(Dataset):
         return len(self.imgs)
 trainroot = '/mnt/disk50/datasets/dataset-gait/CASIA/DatasetB/silhouettes/'
 
-train_data=MyDataset(txt=root+'datalist/train_sample.txt', transform=transforms.ToTensor())
+train_data=MyDataset(txt=root+'datalist/train_file.txt', transform=transforms.ToTensor())
 #print(img1[0].shape,torch.tensor(img1[0]))
-test_data=MyDataset(txt=root+'datalist/test_sample.txt', transform=transforms.ToTensor())
+test_data=MyDataset(txt=root+'datalist/test_file.txt', transform=transforms.ToTensor())
 
 #trainset = MyDataset(path_file=pathfile,list_file=trainlist,numJoints=6,type=False)
-train_loader = torch.utils.data.DataLoader(train_data,batch_size = 30, shuffle=True, num_workers=8)
+train_loader = torch.utils.data.DataLoader(train_data,batch_size = 30, shuffle=False)
 #testset = MyDataset(path_file=pathFile,list_file=testList,numJoints=6,type=False)
-test_loader = torch.utils.data.DataLoader(test_data,batch_size=30,shuffle=False,num_workers=8)
+test_loader = torch.utils.data.DataLoader(test_data,batch_size=30,shuffle=False)
 '''
 # 训练集
 train_loader = torch.utils.data.DataLoader(
@@ -103,7 +105,7 @@ class Net(nn.Module):
         self.conv2_drop = nn.Dropout2d()
         self.fc1 = nn.Linear(320, 50)
         self.fc2 = nn.Linear(50, 10)
-
+        '''
         # 空间转换本地网络 (Spatial transformer localization-network)
         self.localization = nn.Sequential(
             nn.Conv2d(1, 8, kernel_size=10,stride=8),#64,48
@@ -113,10 +115,21 @@ class Net(nn.Module):
             nn.MaxPool2d(2, stride=2),
             nn.ReLU(True)
         )
-
+        '''
+        self.localization = nn.Sequential(
+            nn.Conv2d(1, 4, kernel_size=4,stride=2),#149,149
+            nn.MaxPool2d(2, stride=2),
+            nn.ReLU(True),
+            nn.Conv2d(4, 8, kernel_size=4,stride=2),#36,36
+            nn.MaxPool2d(2, stride=2),#18,18
+            nn.ReLU(True),
+            nn.Conv2d(8, 10, kernel_size=4,stride=2),
+            nn.MaxPool2d(2, stride=2),
+            nn.ReLU(True)
+        )
         # 3 * 2 仿射矩阵 (affine matrix) 的回归器
         self.fc_loc = nn.Sequential(
-            nn.Linear(10 * 4 * 4, 32),
+            nn.Linear(10 * 4 * 4, 32),#10,4,4
             nn.ReLU(True),
             nn.Linear(32, 3 * 2)
         )
@@ -128,7 +141,7 @@ class Net(nn.Module):
     # 空间转换网络的前向函数 (Spatial transformer network forward function)
     def stn(self, x):
         xs = self.localization(x)
-       # print(xs.size())
+        #print(xs.size())
 
         xs = xs.view(-1, 10 * 4 * 4)
         theta = self.fc_loc(xs)
@@ -143,7 +156,7 @@ class Net(nn.Module):
         x = torch.transpose(x,0,1)
 
         fusion = nn.Conv2d(x.size(1),1,kernel_size=1,stride=1).cuda()
-        fusion.weight.data.fill_(1)
+        fusion.weight.data.fill_(1/x.size(1))
         for i in fusion.parameters():
             i.requires_grad = False
         return fusion(x)
@@ -170,8 +183,12 @@ def train(epoch):
     model.train()
     criterion = nn.MSELoss(reduce=True,size_average=True)
     #print(train_loader)
-    for batch_idx, (data, target) in enumerate(train_loader):
+
+    for batch_idx, (data, target,dirname) in enumerate(train_loader):
        # print(data.size(),target.size())
+        #if(len(set(dirname))>1):
+        #    continue
+
         if use_cuda:
             data, target = data.cuda(), target.cuda()
 
@@ -200,12 +217,11 @@ def test():
     test_loss = 0
     correct = 0
     criterion = nn.MSELoss(reduce=True,size_average=True)
-    for data, target in test_loader:
+    for data, target,dirname in test_loader:
         if use_cuda:
             data, target = data.cuda(), target.cuda()
         data, target = Variable(data, volatile=True), Variable(target)
         output = model(data)
-
 
         # 累加批loss
         test_loss += criterion(output, target, size_average=False).data[0]
@@ -220,7 +236,7 @@ def test():
 
 def testm():
     model = Net()
-    pretrained_file = 'model/STN200.pkl'
+    pretrained_file = 'model/STN_gei200.pkl'
     model = torch.load(pretrained_file)
     model.eval()
 
@@ -238,74 +254,85 @@ def convert_image_np(inp):
 # 用 STN 可视化一批输入图像和相对于的转换后的数据.
 
 
-def visualize_stn(order):
+def visualize_stn(num):
     # 得到一批输入数据
     #data, _ = next(iter(test_loader))
-    data, aim = next(iter(test_loader))
-    data = Variable(data, volatile=True)
+    #data, aim = iter(test_loader).next()
+    order = 0
+    for data,aim,dirpath in test_loader:
 
-    aim = Variable(aim,volatile=True)
-    
-    if use_cuda:
-        data = data.cuda()
+        #print(order,dirpath)
+        data = Variable(data, volatile=True)
 
-    aim_tensor = aim.data
+        aim = Variable(aim)
         
-    input_tensor = data.cpu().data
-    transformed_input_tensor = model.stn(data).cpu().data
-    fusion_input_tensor = model.Gei(model.stn(data)).cpu().data
-    #print(transformed_input_tensor.size())
+        if use_cuda:
+            data = data.cuda()
 
-    in_grid = convert_image_np(
-        torchvision.utils.make_grid(input_tensor))
+        aim_tensor = aim.data
+            
+        input_tensor = data.cpu().data
+        transformed_input_tensor = model.stn(data).cpu().data
+        fusion_input_tensor = model.Gei(model.stn(data)).cpu().data
+        #print(transformed_input_tensor.size())
 
-    aim_grid = convert_image_np(
-        torchvision.utils.make_grid(aim_tensor))
+        in_grid = convert_image_np(
+            torchvision.utils.make_grid(input_tensor,padding = 2))
 
-    out_grid = convert_image_np(
-        torchvision.utils.make_grid(transformed_input_tensor))
+        aim_grid = convert_image_np(
+            torchvision.utils.make_grid(aim_tensor))
 
-    fusion_grid = convert_image_np(
-        torchvision.utils.make_grid(fusion_input_tensor))
-    # 并行地 (side-by-side) 画出结果
-    f, axarr = plt.subplots(2, 2)
-    axarr[0,0].imshow(in_grid)
-    axarr[0,0].set_title('Dataset Images')
+        out_grid = convert_image_np(
+            torchvision.utils.make_grid(transformed_input_tensor))
 
-    axarr[0,1].imshow(out_grid)
-    axarr[0,1].set_title('Transformed Images')
+        fusion_grid = convert_image_np(
+            torchvision.utils.make_grid(fusion_input_tensor))
+        # 并行地 (side-by-side) 画出结果
+        f, axarr = plt.subplots(2, 2)
+        axarr[0,0].imshow(in_grid)
+        axarr[0,0].set_title('Dataset Images')
 
-    axarr[1,0].imshow(aim_grid)
-    axarr[1,0].set_title('groundtruth ')
+        axarr[0,1].imshow(out_grid)
+        axarr[0,1].set_title('Transformed Images')
 
-    axarr[1,1].imshow(fusion_grid)
-    axarr[1,1].set_title('output_fusion')
+        axarr[1,0].imshow(aim_grid)
+        axarr[1,0].set_title('groundtruth ')
 
-    plt.savefig('model/'+str(order)+'stn.png')
+        axarr[1,1].imshow(fusion_grid)
+        axarr[1,1].set_title('output_fusion')
+
+        plt.savefig('model/'+str(order)+'stn.png')
+        plt.show()
+        plt.pause(1)
+        plt.close()
+        order = order+1
+        if(order>5):
+            break
+    #break
 
 model = Net()
 if use_cuda:
     model.cuda()
 
+'''
 optimizer = optim.SGD(model.parameters(), lr=0.01)
 
 writer = SummaryWriter()
 start = time()
 
-
-for epoch in range(1, 300 + 1):
+for epoch in range(1, 3 + 1):
     train(epoch)
     #test()
 
 # 在一些输入批次中可视化空间转换网络 (STN) 的转换
 writer.export_scalars_to_json("./log/stn.json")
 writer.close()
-
+'''
 #testm()
-for i  in range(5):
 
-    visualize_stn(i)
-    #plt.ioff()
-    plt.show()
-    plt.pause(1)
-    plt.close()
+pretrained_file = 'model/STN_gei300.pkl'
+model = torch.load(pretrained_file)
+model.eval()
+visualize_stn(5)
+#plt.ioff()
+

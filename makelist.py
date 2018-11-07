@@ -16,11 +16,12 @@ def writeFile(List,tfilename):
 	    	continue
 	    linename.append(line)
 	#print(linename,'##############')
-	linename.sort()
+	#linename.sort()
 
 	for line in linename:
-		f.write(line+'\n')
+		#f.write(line+'\n')
 		#print(line)
+		f.write(line)
 	print("order writing done!")
 	f.close()
 
@@ -149,21 +150,64 @@ def read_file2(imgpath,respath):
 				if os.path.exists(resfile):
 					print(resfile)
 					trainlist.append(dirpath+'/'+filename + ' '+resfile)
-		if(count>2000):
+		if(count>10000):
 			break
 	return trainlist
+def read_file3(imgpath):
+	#count = 0
+	for (dirpath,dirnames,filenames) in os.walk(imgpath):
+		for filename in filenames:
+			if filename[-3:]=='png' or filename[-3:]=='jpg':
+				label = dirpath[locate:locate+3]  #'/mnt/ftp/datasets/dataset-gait/CASIA/DatasetB/silhouettes/'#001/bg-01/000/'		
+				#count = count + 1
+				trainlist.append(dirpath+'/'+filename+' '+str(int(label)))
+				#continue
+		#if(count>10000):
+		#	break
+	return trainlist
 
+def setfile(txtfile): #split img into bolck
+	f = open(txtfile, 'r')
+	imgs = f.readlines()
+	#imgs = imgs[491994:]
+	predir = ''
+	count = 0
+	fileblock = []
+	tmpblock = []
+	for pairsss in imgs:
+		pairs = pairsss.split()
+		
+		dirpath = pairs[0][:locate]
+		if(dirpath!=predir):
+			predir = dirpath
+			if(len(tmpblock)!=0):
+				fileblock.append(tmpblock)
+			tmpblock = []
+		tmpblock.append(pairsss)
+	fileblock.append(tmpblock)
+	random.shuffle(fileblock)
+	trainlist = []
+	for block in fileblock:
+		count = 0
+		for item in block:
+			trainlist.append(str(count)+' '+item)
+			count = count + 1
+			#print(count)
+	return trainlist
 
 trainfile = 'datalist/train_all.txt'
-newtrain = 'datalist/train_ksample.txt'
-testfile = 'datalist/test_ksample.txt'
-imgpath = '/mnt/ftp/datasets/dataset-gait/CASIA/DatasetB/silhouettes/'#001/bg-01/000/'
+newtrain = 'datalist/train_sgei.txt'
+testfile = 'datalist/test_sgei.txt'
+#imgpath = '/mnt/ftp/datasets/dataset-gait/CASIA/DatasetB/silhouettes/'#001/bg-01/000/'
+imgpath = '/mnt/ftp/datasets/dataset-gait/CASIA/DatasetB/silhouettes/001/bg-01/090/'
 respath = '/mnt/disk50/datasets/dataset-gait/CASIA/DatasetB/cropImg/'
 locate = len(imgpath)
 trainlist = []
 vlalist = []
 testlist = []
-trainlist = read_file2(imgpath,respath)
+#trainlist = read_file3(imgpath)
+trainlist = setfile('datalist/alltrain.txt')
+
 writeFile(trainlist,trainfile)
 #shufflefile2(trainfile)
 

@@ -16,12 +16,22 @@ import random
 import os
 from resnet import ResNet,BasicBlock
 import torch.utils.model_zoo as model_zoo
+import argparse
+parser = argparse.ArgumentParser(description='train mode')
+parser.add_argument('--data_size',type=str,default='LT')
+parser.add_argument('--batch_size',type=int,default=1)
+parser.add_argument('--save_npy',type=int,default=0)#not save
+parser.add_argument('--imgpath',type=str,default='/home/lxq/GeiGait/data/')
+parser.add_argument('--num_classes',type=int,default=150)
+args = parser.parse_args()
+data_size = args.data_size
+batch_size = args.batch_size
+save_npy = args.save_npy
+imgpath = args.imgpath
+num_classes = args.num_classes
 os.environ['CUDA_VISIBLE_DEVICES'] = '0'
-
-
-imgpath = '/mnt/disk50/datasets/dataset-gait/CASIA/DatasetB/GEI/'
 #imgpath = '/mnt/disk50/datasets/dataset-gait/CASIA/DatasetB/GEI/'
-root = '/home/xiaoqian/GeiGait/'
+root = '/home/lxq/GeiGait/'
 # -----------------ready the dataset--------------------------
 def default_loader(path):
     return Image.open(path).convert('RGB')
@@ -45,19 +55,15 @@ class MyDataset(Dataset):
         img = self.loader(imgpath + fn)
         img = img.resize((224,224))
         imgdata = np.array(img)
-        #print(imgdata.shape)
         imgdata = imgdata.swapaxes(0,2)
-        #print("swap:",imgdata.shape)
-        #imgdata = imgdata[np.newaxis,:]
         return imgdata,label
 
     def __len__(self):
         return len(self.imgs)
 
-train_data=MyDataset(txt=root+'datalist/MT_train_list.txt', transform=transforms.ToTensor())
-#print(img1[0].shape,torch.tensor(img1[0]))
-test_data=MyDataset(txt=root+'datalist/MT_gallery_list.txt', transform=transforms.ToTensor())
-probe_data=MyDataset(txt=root+'datalist/MT_probe_list.txt', transform=transforms.ToTensor())
+train_data=MyDataset(txt=root+'datalist/'+data_size+'_train_list.txt', transform=transforms.ToTensor())
+test_data=MyDataset(txt=root+'datalist/'+data_size+'_gallery_list.txt', transform=transforms.ToTensor())
+probe_data=MyDataset(txt=root+'datalist/'+data_size+'_probe_list.txt', transform=transforms.ToTensor())
 
 def load_data_cross(batch_size=10,data_source = probe_data):
     global global_point
@@ -72,7 +78,7 @@ def load_data_cross(batch_size=10,data_source = probe_data):
         data.append(tempdata)
         label.append(templabel)
         global_point = global_point + 1
-    return torch.from_numpy(np.array(data)).float().cuda(),label#torch.from_numpy(np.array(label)).long()
+    return torch.from_numpy(np.array(data)).float().cuda(),torch.from_numpy(np.array(label)).long()
 
 def load_model(model,pretrainedfile):
     if(pretrainedfile[-3:]=='pth'): #resnet
@@ -103,58 +109,63 @@ def calcul(output,result,label):#512  n*512  #numpy
     return top1,top5
 
 
-model = ResNet(BasicBlock,[2,2,2,2],num_classes=150).cuda()
-#model = load_model(model,pretrained_file)
+#model = ResNet(BasicBlock,[2,2,2,2],num_classes=num_classes).cuda()
 global_point=0
 
 start = time()
-pretrained_file = 'model/casia_MT2900.pkl'
+'''
+pretrained_file = 'model/casia_'+data_size+'3000.pkl'
 pre_model = torch.load(pretrained_file)
 pre_model = pre_model.state_dict()
 model_dict = model.state_dict()
 weight = {k:v for k,v in pre_model.items() if k in model_dict}
 model_dict.update(weight)
 model.load_state_dict(model_dict)
+'''
+model = torch.load('model/casia_'+data_size+'3000.pkl')
 model.eval()
-'''
-data,label = load_data_cross()
-result = model(data).detach().cpu()
-while global_point<test_data.__len__():
+if save_npy>0:
+    data,label = load_data_cross(data_source=test_data)
+    result = model.testfor(data).detach().cpu()
+    while global_point<test_data.__len__():
 
-    data,label_temp = load_data_cross()
-    #print(global_point,data.shape,label_temp.shape)
-    output = model(data).detach().cpu()
-    label = torch.cat((label,label_temp),0)
-    result = torch.cat((result,output),0)#10,512
-result = result.numpy()
-label = label.numpy()
-np.save("model/MT_galler_list.npy",result)
-np.save("model/MT_galler_label.npy",label)
-'''
+        data,label_temp = load_data_cross(data_source=test_data)
+        #print(global_point,data.shape,label_temp.shape)
+        output = model.testfor(data).detach().cpu()
+        label = torch.cat((label,label_temp),0)
+        result = torch.cat((result,output),0)#10,512
+    result = result.numpy()
+    label = label.numpy()
+    np.save('model/'+data_size+'_gallery_list.npy',result)
+    np.save('model/'+data_size+'_gallery_label.npy',label)
+
 print('gallery load')
-result = np.load("model/MT_galler_list.npy")
-label = np.load("model/MT_galler_label.npy")
+result = np.load('model/'+data_size+'_gallery_list.npy')
+label = np.load('model/'+data_size+'_gallery_label.npy')
 count5all,countall,sumdata=0,0,0
 global_point = 0
 batch_size = 1
 start = time()
-for i in range(probe_data.__len__()):
+for i in range(5000):
     data,label_temp = load_data_cross(batch_size = batch_size,data_source = probe_data)#
-    output = model(data)#1,512
+    output = model.testfor(data)#1,512
     output = output.squeeze()
     output = output.detach().cpu().numpy()
     top1,top5 = calcul(output,result,label)
+    label = label.squeeze()
     #print(label_temp,top1,top5)
     if batch_size==1:
         label_temp = int(label_temp[0])
+    #print(label_temp,top1,top5)
     if label_temp == top1:
         countall=countall+1
     if label_temp in top5:
         count5all = count5all+1
     sumdata = i
-    if(i%500==0 and i>0):
-        print('test_num: {} [{}/{} ({:.0f}%)] top1:{:.2f} top5:{:.2f} time:{:.2f}'.format(
-        i, i, probe_data.__len__(),100. * i / probe_data.__len__(), countall/sumdata,count5all/sumdata),time()-start)
+    if(i%200==0 and i>0):
+        print(data_size,' [{}/{} ({:.0f}%)] top1:{:.2f} top5:{:.2f} time:{:.2f}'.format(
+            i, probe_data.__len__(),100. * i / probe_data.__len__(), countall/sumdata,count5all/sumdata,time()-start))
+
 #def calcul_gallery(probe,):
 
 '''

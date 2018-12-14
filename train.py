@@ -18,19 +18,25 @@ from resnet import ResNet,BasicBlock
 import torch.utils.model_zoo as model_zoo
 import argparse
 parser = argparse.ArgumentParser(description='train mode')
-parser.add_argument('--data_size',type=str,default='LT')
+parser.add_argument('--data_size',type=str,default='stnLT')
 parser.add_argument('--batch_size',type=int,default=20)
 parser.add_argument('--ita_times',type=int,default=3000)
 parser.add_argument('--num_classes',type=int,default=150)
+parser.add_argument('--imgpath',type=str,default='/home/lxq/GeiGait/data/')
 args = parser.parse_args()
 data_size = args.data_size
 batch_size = args.batch_size
 ita_times = args.ita_times
 num_classes = args.num_classes
-
+if(data_size=='ST'):
+    num_classes = 25
+elif(data_size=='MT'):
+    num_classes = 63
+else:
+    num_classes=75
+imgpath = args.imgpath
 os.environ['CUDA_VISIBLE_DEVICES'] = '0'
-imgpath = '/mnt/disk50/datasets/dataset-gait/CASIA/DatasetB/GEI/'
-root = '/home/xiaoqian/GeiGait/'
+root = '/home/lxq/GeiGait/'
 # -----------------ready the dataset--------------------------
 def default_loader(path):
     return Image.open(path).convert('RGB')
@@ -113,6 +119,7 @@ for ita in range(ita_times+1):
     data = torch.autograd.Variable(data1.cuda())
     optimizer.zero_grad()
     out = model(data)
+    #print(out.shape)
     tout = out.cpu().detach().numpy()
     #print(out.shape,label2.shape)
     pred = []
@@ -150,11 +157,9 @@ for ita in range(ita_times+1):
         writer.add_scalar('top5/x',top5acc,ita)
         print("ita:",ita," loss:",str(loss.cpu().detach().numpy()), " time: ",str(int(end-start)))
         print("accuracy: "+ str(accuracy), " top5: " + str(top5acc))
-        
-        f.write(str(ita)+' ' + str(loss.cpu().detach().numpy())+' '+str(accuracy)+'\n')
         countall=0
         count5all=0
-    if(ita>=1000 and ita%1000==0):
+    if(ita>2000 and ita%1000==0):
         torch.save(model,'./model/casia_'+data_size+str(ita)+'.pkl')
 
     #print(out.size(),out)
